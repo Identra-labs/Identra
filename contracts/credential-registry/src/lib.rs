@@ -8,6 +8,7 @@ pub struct CredentialRegistryContract;
 #[contractimpl]
 impl CredentialRegistryContract {
     /// Stub — returns true so the crate compiles and one passing test exists.
+    /// Full implementation is added in Spec 3.
     pub fn ping(_env: Env) -> bool {
         true
     }
@@ -21,7 +22,7 @@ mod tests {
     #[test]
     fn ping_returns_true() {
         let env = Env::default();
-        let contract_id = env.register_contract(None, CredentialRegistryContract);
+        let contract_id = env.register(CredentialRegistryContract, ());
         let client = CredentialRegistryContractClient::new(&env, &contract_id);
         assert!(client.ping());
     }

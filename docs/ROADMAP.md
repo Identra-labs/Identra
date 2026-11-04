@@ -2,7 +2,10 @@
 
 Nothing below is done until its box is checked and the work is merged.
 
-- [ ] **Spec 1: Prior art, SDK/Soroban verification, scaffold** — files written; commands unverified (Rust and Node not installed on build machine; must be run in CI or a developer terminal)
+- [ ] **Spec 1: Prior art, SDK/Soroban verification, scaffold** — files written
+  with correct pinned versions (soroban-sdk 29.0.1, Rust 1.93.0, Node 26.13.0);
+  commands must be run locally to verify (Rust and Node not yet installed on
+  build machine).
 - [ ] **Spec 2: Identity registry contract and tests**
 - [ ] **Spec 3: Credential registry contract and tests**
 - [ ] **Spec 4: SDK (bindings wrapper, Merkle utilities, verifyDisclosure)**

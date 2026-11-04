@@ -1,52 +1,89 @@
 # Decisions
 
-Record choices that affect contributors, with the reason.
+Record choices that affect contributors, with the reason and source.
 
 ---
 
 ## Project name
-"Identra" is free on npm (`npm view identra` returns 404) and not registered as a GitHub org or repo by anyone else as of November 2026.
+"Identra" is free on npm (`npm view identra` returns 404) and not registered
+as a GitHub org or crate as of November 2026.
 
 ---
 
-## Rust toolchain version: 1.81.0 (Spec 1)
-- Pinned in `rust-toolchain.toml`.
-- soroban-sdk v22.0.0 requires a recent stable Rust toolchain. 1.81.0 is stable, has no known regressions for Soroban Wasm compilation, and is available on all major CI runners.
-- Recorded in: `docs/SOROBAN_NOTES.md §1`.
+## Rust toolchain version: 1.93.0 (Spec 1)
 
-## soroban-sdk version: 22.0.0 (Spec 1)
-- Protocol 22 is live on Testnet and Mainnet.
-- v22.0.0 is the stable, non-pre-release version targeting Protocol 22.
-- v30.0.0-rc.1 exists but is a pre-release and changes the build target to `wasm32v1-none`, which is not stable on Windows toolchains. Pinned at exactly `22.0.0`.
-- Recorded in: `docs/SOROBAN_NOTES.md §1`.
+- **Pinned in:** `rust-toolchain.toml`
+- **Source:** https://crates.io/crates/stellar-cli (version 30.0.1, field `rust_version: "1.93.0"`)
+- **Rationale:** stellar-cli 30.0.1 is the minimum build tool required for
+  soroban-sdk ≥ 28 (see below). Its minimum Rust version is 1.93.0, which is
+  higher than soroban-sdk 29.0.1's own minimum (1.91.0), so 1.93.0 is the
+  controlling floor.
+- **Target added:** `wasm32v1-none` — required by soroban-sdk ≥ 28 for Wasm
+  compilation; `stellar contract build` manages this target automatically.
+
+## soroban-sdk version: 29.0.1 (Spec 1)
+
+- **Pinned in:** workspace `Cargo.toml`
+- **Source:** https://crates.io/crates/soroban-sdk — `max_stable_version: "29.0.1"` as of November 2026
+- **Rationale:** Latest stable release. Version 30.0.0-rc.1 exists but is a
+  pre-release. 29.0.1 is the highest non-pre-release version.
+- **Minimum Rust:** 1.91.0 (per crates.io metadata) — superseded by stellar-cli's 1.93.0 requirement.
+
+## stellar-cli version: 30.0.1 (Spec 1)
+
+- **Source:** https://crates.io/crates/stellar-cli — `max_stable_version: "30.0.1"` as of November 2026
+- **Rationale:** soroban-sdk ≥ 28 requires `stellar contract build` (not raw
+  `cargo build`) to process the contract spec post-build. stellar-cli 30.0.1 is
+  the latest stable version that ships this command.
+- **Official doc confirming requirement:**
+  https://developers.stellar.org/docs/build/smart-contracts/getting-started/hello-world
+  ("With soroban-sdk 28 or later, running cargo build --target wasm32v1-none
+  --release directly fails … always build contracts with stellar contract build")
+- **Install:** `cargo install --locked stellar-cli --version 30.0.1`
+
+## Build target: wasm32v1-none (Spec 1)
+
+- **Source:** https://developers.stellar.org/docs/build/smart-contracts/getting-started/hello-world
+- **Note:** `stellar contract build` adds and uses this target automatically.
+  `cargo test` runs natively and does not need the Wasm target.
 
 ---
 
-## Node.js version: 20.18.0 (Spec 1)
-- Node 20 is the current LTS line.
-- 20.18.0 is the last patch of the 20.18 series, stable and available via nvm/setup-node.
-- Pinned in `.nvmrc`.
+## Node.js version: 26.13.0 (Spec 1)
+
+- **Pinned in:** `.nvmrc`
+- **Source:** https://nodejs.org/dist/index.json — v26.13.0 is `lts: "Lithium"`,
+  the current active LTS line as of November 2026.
+- **npm bundled:** 11.20.0 (from Node.js release index)
 
 ## TypeScript version: 5.6.3 (Spec 1)
-- Latest 5.x stable as of November 2026. `exactOptionalPropertyTypes` and `noUnusedParameters` are supported from 5.x.
+
+- Latest 5.x stable. Supports `exactOptionalPropertyTypes`, `noUnusedParameters`,
+  and all other strict flags used in our tsconfig.
 
 ## ESLint version: 9.14.0 (Spec 1)
-- Uses the flat config format (eslint.config.mjs). Version 9 is the current major line with flat config as default.
+
+- Uses flat config format (`eslint.config.mjs`). Version 9 is the current major
+  with flat config as default.
 
 ## Vitest version: 2.1.4 (Spec 1)
-- Vitest 2.x is the current stable major; 2.1.4 is the last patch as of November 2026.
-- Used for all TypeScript unit tests. Does not require watch mode (`vitest run` for CI).
+
+- Vitest 2.x current stable. Used with `vitest run` for single-pass CI execution
+  (no watch mode).
 
 ## Package manager: npm workspaces (Spec 1)
-- npm is installed with Node; no additional install step. yarn and pnpm were considered but npm workspaces are sufficient for this monorepo size and avoid extra tooling.
+
+- npm is bundled with Node; no extra install. Sufficient for this monorepo size.
 
 ---
 
-## Merkle tree format (Spec 4 — pending)
-- Hash function, salt size, leaf encoding, and test vectors to be decided and recorded in Spec 4.
-- See `docs/MERKLE_SPEC.md` (created in Spec 4).
+## Merkle tree format: hash function, salt size, leaf encoding (Spec 4 — pending)
+
+Decided and recorded in Spec 4 with test vectors in `docs/MERKLE_SPEC.md`.
 
 ---
 
 ## Credential registry: who may register schemas (Spec 3 — pending)
-- To be decided in Spec 3. Candidates: (a) admin only, (b) any approved issuer, (c) admin or any approved issuer.
+
+Candidates: (a) admin only, (b) any approved issuer, (c) admin or any approved
+issuer. Decided and documented in Spec 3.
