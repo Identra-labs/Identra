@@ -1,0 +1,20 @@
+{
+  "name": "@identra/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Identra identity and credential toolkit on Soroban",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

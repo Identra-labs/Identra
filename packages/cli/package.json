@@ -1,0 +1,25 @@
+{
+  "name": "@identra/cli",
+  "version": "0.1.0",
+  "description": "CLI for the Identra identity and credential toolkit on Soroban",
+  "bin": {
+    "identra": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@identra/sdk": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
