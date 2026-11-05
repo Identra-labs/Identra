@@ -6,7 +6,7 @@ Nothing below is done until its box is checked and the work is merged.
   with correct pinned versions (soroban-sdk 29.0.1, Rust 1.93.0, Node 26.13.0);
   commands must be run locally to verify (Rust and Node not yet installed on
   build machine).
-- [ ] **Spec 2: Identity registry contract and tests**
+- [x] **Spec 2: Identity registry contract and tests** — 12 functions, 32 tests, `cargo fmt`, `clippy -D warnings`, `cargo test --workspace` all pass.
 - [ ] **Spec 3: Credential registry contract and tests**
 - [ ] **Spec 4: SDK (bindings wrapper, Merkle utilities, verifyDisclosure)**
 - [ ] **Spec 5: CLI, docs, threat model, final checks**
