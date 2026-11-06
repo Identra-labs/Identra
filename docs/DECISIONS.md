@@ -77,9 +77,15 @@ as a GitHub org or crate as of November 2026.
 
 ---
 
-## Merkle tree format: hash function, salt size, leaf encoding (Spec 4 — pending)
+## Merkle tree format (Spec 4)
 
-Decided and recorded in Spec 4 with test vectors in `docs/MERKLE_SPEC.md`.
+- **Hash function:** SHA-256 via `crypto.subtle.digest` (Web Crypto API, Node.js 20+ built-in). No external hash library.
+- **Salt size:** 32 bytes (256 bits). Matches SHA-256 output length.
+- **Leaf encoding:** `SHA-256(0x00 || salt(32) || key_utf8 || ':' || value_utf8)` — domain-separated with prefix byte `0x00`.
+- **Node encoding:** `SHA-256(0x01 || left(32) || right(32))` — domain-separated with prefix byte `0x01`.
+- **Odd leaf count:** duplicate the last leaf.
+- **Leaf ordering:** sorted by claim key (UTF-8 lexicographic) before construction.
+- See `docs/MERKLE_SPEC.md` for full spec and test vectors.
 
 ---
 
