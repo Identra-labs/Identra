@@ -18,8 +18,7 @@ pub enum DataKey {
     NextSchemaId,
     Credential(u64),
     NextCredId,
-    OwnerCreds(Address), // owner → Vec<u64> (credential ids)
-    IdentityRegistry,
+    OwnerCreds(Address),
 }
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -43,7 +42,7 @@ pub struct CredentialRecord {
     pub schema_id: u64,
     /// Merkle root of the off-chain salted claim tree. No claim values here.
     pub claims_root: BytesN<32>,
-    pub expiry: u64, // ledger timestamp (seconds)
+    pub expiry: u64,
     pub revoked: bool,
 }
 
@@ -73,8 +72,6 @@ pub enum Error {
     ExpiryInPast = 10,
     WrongIssuer = 11,
     NoPendingTransfer = 12,
-    NotActive = 13,
-    SubjectNoIdentity = 14,
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -188,8 +185,6 @@ pub struct CredentialRegistryContract;
 
 #[contractimpl]
 impl CredentialRegistryContract {
-    // ── Init ──────────────────────────────────────────────────────────────────
-
     pub fn init(env: Env, admin: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
@@ -206,8 +201,6 @@ impl CredentialRegistryContract {
         .publish(&env);
         Ok(())
     }
-
-    // ── Admin transfer ────────────────────────────────────────────────────────
 
     pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), Error> {
         require_admin(&env)?;
@@ -247,8 +240,6 @@ impl CredentialRegistryContract {
         Ok(())
     }
 
-    // ── Pause / unpause ───────────────────────────────────────────────────────
-
     pub fn pause(env: Env) -> Result<(), Error> {
         require_admin(&env)?;
         if is_paused(&env) {
@@ -276,8 +267,6 @@ impl CredentialRegistryContract {
         .publish(&env);
         Ok(())
     }
-
-    // ── Issuer management ─────────────────────────────────────────────────────
 
     pub fn add_issuer(env: Env, issuer: Address) -> Result<(), Error> {
         require_admin(&env)?;
@@ -313,8 +302,6 @@ impl CredentialRegistryContract {
         .publish(&env);
         Ok(())
     }
-
-    // ── Schema registry ───────────────────────────────────────────────────────
 
     /// Register a schema. Caller must be an approved issuer or the admin.
     pub fn register_schema(
@@ -361,10 +348,8 @@ impl CredentialRegistryContract {
         Ok(id)
     }
 
-    // ── Issue / revoke ────────────────────────────────────────────────────────
-
-    /// Issue a credential. Issuer must be approved.
-    /// If an identity registry is configured, subject must have an active identity.
+    /// Issue a credential. Issuer must be approved. Schema must exist.
+    /// Expiry must be strictly in the future.
     pub fn issue(
         env: Env,
         issuer: Address,
@@ -380,15 +365,13 @@ impl CredentialRegistryContract {
         if !is_issuer(&env, &issuer) {
             return Err(Error::NotIssuer);
         }
-        // Reject expiry in the past
+        if !env.storage().persistent().has(&DataKey::Schema(schema_id)) {
+            return Err(Error::SchemaNotFound);
+        }
         let now = env.ledger().timestamp();
         if expiry <= now {
             return Err(Error::ExpiryInPast);
         }
-        // Optional identity registry check: included when set_identity_registry has been
-        // called. Cross-contract integration requires the identity-registry wasm to be
-        // built first (`stellar contract build --package identity-registry`).
-        // Tested separately once stellar-cli is available. See docs/DECISIONS.md.
         let id: u64 = env
             .storage()
             .instance()
@@ -406,7 +389,6 @@ impl CredentialRegistryContract {
         env.storage()
             .persistent()
             .set(&DataKey::Credential(id), &rec);
-        // Append to owner index
         let key = DataKey::OwnerCreds(subject.clone());
         let mut ids: Vec<u64> = env
             .storage()
@@ -463,8 +445,6 @@ impl CredentialRegistryContract {
         .publish(&env);
         Ok(())
     }
-
-    // ── Queries ───────────────────────────────────────────────────────────────
 
     pub fn status(env: Env, credential_id: u64) -> CredentialStatus {
         let rec: CredentialRecord = match env
@@ -529,20 +509,6 @@ impl CredentialRegistryContract {
         result
     }
 
-    /// Optionally set the identity registry address. Admin only.
-    pub fn set_identity_registry(env: Env, registry: Address) -> Result<(), Error> {
-        require_admin(&env)?;
-        env.storage()
-            .instance()
-            .set(&DataKey::IdentityRegistry, &registry);
-        bump_instance(&env);
-        RegistryEvent {
-            action: symbol_short!("setidreq"),
-        }
-        .publish(&env);
-        Ok(())
-    }
-
     pub fn get_admin(env: Env) -> Result<Address, Error> {
         env.storage()
             .instance()
@@ -550,10 +516,6 @@ impl CredentialRegistryContract {
             .ok_or(Error::NotInitialized)
     }
 }
-
-// ── Cross-contract import ─────────────────────────────────────────────────────
-// Placeholder for when stellar-cli is available to build the identity-registry
-// wasm. See docs/DECISIONS.md for the cross-contract integration plan.
 
 #[cfg(test)]
 mod tests;

@@ -6,8 +6,8 @@
 - **Selective disclosure.** A holder can prove individual claims without revealing others. The verifier learns only the claims the holder chooses to share.
 - **Issuer integrity.** Only admin-approved issuers can issue credentials or register schemas. Only the issuing issuer can revoke their own credential.
 - **Admin integrity.** Admin transfer is two-step; the new admin must accept before the change takes effect, preventing accidental lockout.
-- **Replay resistance.** Merkle proofs are bound to a specific `claims_root` stored on-chain. Reusing a proof against a different root will fail verification.
-- **Revocation.** Issuers can revoke credentials on-chain. `verifyDisclosure` reports the credential status, so verifiers can check revocation at verification time.
+- **Replay resistance.** Merkle proofs are bound to a specific `claims_root` stored on-chain. Reusing a proof against a different root fails verification.
+- **Revocation.** Issuers can revoke credentials on-chain. `verifyDisclosure` reports the status supplied by the caller; verifiers are responsible for fetching the current status from the contract before calling it.
 - **Denial-of-service by pause.** The admin can pause the registry to block new writes in an emergency, while reads remain available.
 
 ## What is NOT protected

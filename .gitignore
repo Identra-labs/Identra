@@ -6,3 +6,5 @@ dist/
 .DS_Store
 coverage/
 KIRO_STEPS.md
+test_snapshots/
+*.tsbuildinfo

@@ -191,6 +191,7 @@ fn issue_non_issuer_fails() {
     let (env, _, client) = setup();
     let stranger = Address::generate(&env);
     let subject = Address::generate(&env);
+    // schema_id doesn't matter — NotIssuer is checked first
     assert_eq!(
         contract_err(client.try_issue(&stranger, &subject, &1, &hash(&env, 1), &future(&env, 100))),
         Error::NotIssuer
@@ -210,6 +211,31 @@ fn issue_expiry_in_past_fails() {
         contract_err(client.try_issue(&issuer, &subject, &sid, &hash(&env, 1), &now)),
         Error::ExpiryInPast
     );
+}
+
+#[test]
+fn issue_schema_not_found_fails() {
+    let (env, _, client) = setup();
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    client.add_issuer(&issuer);
+    // schema id 999 was never registered
+    assert_eq!(
+        contract_err(client.try_issue(&issuer, &subject, &999, &hash(&env, 1), &future(&env, 100))),
+        Error::SchemaNotFound
+    );
+}
+
+#[test]
+fn issue_uses_registered_schema() {
+    let (env, _, client) = setup();
+    let issuer = Address::generate(&env);
+    let subject = Address::generate(&env);
+    client.add_issuer(&issuer);
+    let sid = client.register_schema(&issuer, &1, &hash(&env, 1));
+    // issuing with the real schema id succeeds
+    let cid = client.issue(&issuer, &subject, &sid, &hash(&env, 2), &future(&env, 1000));
+    assert_eq!(client.get_credential(&cid).schema_id, sid);
 }
 
 #[test]

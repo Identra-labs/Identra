@@ -70,7 +70,8 @@ async function main(): Promise<void> {
   );
 
   // eslint-disable-next-line no-console
-  console.log("Disclosure valid:", result.valid);
+  console.log("Proofs valid:", result.proofsValid);
+  console.log("Accepted:", result.accepted);
   // eslint-disable-next-line no-console
   console.log("Status:", result.status);
   // eslint-disable-next-line no-console

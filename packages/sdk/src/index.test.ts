@@ -95,11 +95,20 @@ describe("hashLeaf", () => {
     ).rejects.toThrow("salt must be 32 bytes");
   });
 
-  it("known vector: zero salt, age=30", async () => {
-    // This is a test vector — exact value must remain stable.
-    const h = await hashLeaf({ key: "age", value: "30", salt: ZERO_SALT });
-    // Record the hex so any change is caught
+  it("key containing colon is handled correctly (no ambiguity with old encoding)", async () => {
+    // With length-prefix encoding, "a:b"/"c" and "a"/"b:c" produce different hashes
+    const a = await hashLeaf({ key: "a:b", value: "c", salt: ZERO_SALT });
+    const b = await hashLeaf({ key: "a", value: "b:c", salt: ZERO_SALT });
+    expect(bytesEqual(a, b)).toBe(false);
+  });
+
+  it("non-ASCII key is handled", async () => {
+    const h = await hashLeaf({ key: "名前", value: "Alice", salt: ZERO_SALT });
     expect(h.length).toBe(32);
+  });
+
+  it("known vector: zero salt, age=30 (snapshot)", async () => {
+    const h = await hashLeaf({ key: "age", value: "30", salt: ZERO_SALT });
     expect(toHex(h)).toMatchSnapshot();
   });
 });
@@ -121,11 +130,7 @@ describe("hashNode", () => {
   });
 
   it("node hash ≠ leaf hash for same input", async () => {
-    const leaf = await hashLeaf({
-      key: "age",
-      value: "30",
-      salt: ZERO_SALT,
-    });
+    const leaf = await hashLeaf({ key: "age", value: "30", salt: ZERO_SALT });
     const node = await hashNode(leaf, leaf);
     expect(bytesEqual(leaf, node)).toBe(false);
   });
@@ -141,32 +146,31 @@ describe("buildTree", () => {
     expect(bytesEqual(tree.root, leaf)).toBe(true);
   });
 
-  it("two claims: root is hash of two leaves", async () => {
+  it("two claims: root is hash of two leaves (sorted)", async () => {
     const a = { key: "age", value: "30", salt: ZERO_SALT };
     const b = { key: "name", value: "Alice", salt: ZERO_SALT };
     const tree = await buildTree([a, b]);
-    // sorted: age, name
+    // sorted: "age" < "name" by UTF-8 bytes
     const la = await hashLeaf({ key: "age", value: "30", salt: ZERO_SALT });
-    const lb = await hashLeaf({
-      key: "name",
-      value: "Alice",
-      salt: ZERO_SALT,
-    });
+    const lb = await hashLeaf({ key: "name", value: "Alice", salt: ZERO_SALT });
     const expected = await hashNode(la, lb);
     expect(bytesEqual(tree.root, expected)).toBe(true);
   });
 
-  it("sorts leaves by key", async () => {
-    const tree1 = await buildTree([
-      makeClaim("z", "1"),
-      makeClaim("a", "2"),
-    ]);
-    const tree2 = await buildTree([
-      makeClaim("a", "2"),
-      makeClaim("z", "1"),
-    ]);
+  it("sorts leaves by UTF-8 key bytes", async () => {
+    const tree1 = await buildTree([makeClaim("z", "1"), makeClaim("a", "2")]);
+    const tree2 = await buildTree([makeClaim("a", "2"), makeClaim("z", "1")]);
     expect(bytesEqual(tree1.root, tree2.root)).toBe(true);
     expect(tree1.leaves[0].key).toBe("a");
+  });
+
+  it("sorts non-ASCII keys by UTF-8 bytes", async () => {
+    // "\u00e9" (é, 2 bytes) < "\u4e2d" (中, 3 bytes) by byte comparison
+    const tree = await buildTree([
+      makeClaim("\u4e2d", "1"),
+      makeClaim("\u00e9", "2"),
+    ]);
+    expect(tree.leaves[0].key).toBe("\u00e9");
   });
 
   it("odd leaf count: duplicates last leaf", async () => {
@@ -181,14 +185,14 @@ describe("buildTree", () => {
     expect(tree.root.length).toBe(32);
   });
 
-  it("duplicate claim keys still builds (last one wins in sort)", async () => {
-    const claims = [makeClaim("a", "1"), makeClaim("a", "2")];
-    const tree = await buildTree(claims);
-    expect(tree.root.length).toBe(32);
-  });
-
   it("throws on empty claims", async () => {
     await expect(buildTree([])).rejects.toThrow("zero claims");
+  });
+
+  it("throws on duplicate keys", async () => {
+    await expect(
+      buildTree([makeClaim("a", "1"), makeClaim("a", "2")]),
+    ).rejects.toThrow("duplicate claim key");
   });
 });
 
@@ -200,76 +204,65 @@ describe("generateProof + verifyProof", () => {
     const b = makeClaim("name", "Alice");
     const tree = await buildTree([a, b]);
     const proof = generateProof(tree, "age");
-    const ok = await verifyProof(a, proof, tree.root);
-    expect(ok).toBe(true);
+    expect(await verifyProof(a, proof, tree.root)).toBe(true);
   });
 
   it("verifies both leaves in a two-leaf tree", async () => {
     const a = makeClaim("age", "30");
     const b = makeClaim("name", "Alice");
     const tree = await buildTree([a, b]);
-    const pa = generateProof(tree, "age");
-    const pb = generateProof(tree, "name");
-    expect(await verifyProof(a, pa, tree.root)).toBe(true);
-    expect(await verifyProof(b, pb, tree.root)).toBe(true);
+    expect(await verifyProof(a, generateProof(tree, "age"), tree.root)).toBe(true);
+    expect(await verifyProof(b, generateProof(tree, "name"), tree.root)).toBe(true);
   });
 
-  it("verifies a proof in a four-leaf tree", async () => {
+  it("verifies all leaves in a four-leaf tree", async () => {
     const claims = ["a", "b", "c", "d"].map((k) => makeClaim(k, k));
     const tree = await buildTree(claims);
     for (const c of claims) {
-      const proof = generateProof(tree, c.key);
-      expect(await verifyProof(c, proof, tree.root)).toBe(true);
+      expect(await verifyProof(c, generateProof(tree, c.key), tree.root)).toBe(true);
     }
   });
 
-  it("verifies a proof in an odd-leaf tree", async () => {
+  it("verifies all leaves in an odd-leaf tree", async () => {
     const claims = ["a", "b", "c"].map((k) => makeClaim(k, k));
     const tree = await buildTree(claims);
     for (const c of claims) {
-      const proof = generateProof(tree, c.key);
-      expect(await verifyProof(c, proof, tree.root)).toBe(true);
+      expect(await verifyProof(c, generateProof(tree, c.key), tree.root)).toBe(true);
     }
   });
 
-  it("tampered claim fails verification", async () => {
+  it("tampered claim value fails", async () => {
     const a = makeClaim("age", "30");
     const b = makeClaim("name", "Alice");
     const tree = await buildTree([a, b]);
     const proof = generateProof(tree, "age");
-    const tampered = makeClaim("age", "99"); // wrong value
-    tampered.salt.set(a.salt);
-    const ok = await verifyProof(tampered, proof, tree.root);
-    expect(ok).toBe(false);
+    const tampered: SaltedClaim = { key: "age", value: "99", salt: a.salt };
+    expect(await verifyProof(tampered, proof, tree.root)).toBe(false);
   });
 
-  it("wrong salt fails verification", async () => {
+  it("wrong salt fails", async () => {
     const a = makeClaim("age", "30");
     const b = makeClaim("name", "Alice");
     const tree = await buildTree([a, b]);
     const proof = generateProof(tree, "age");
-    const wrongSalt = makeClaim("age", "30", 99); // different salt
-    const ok = await verifyProof(wrongSalt, proof, tree.root);
-    expect(ok).toBe(false);
+    const wrongSalt = makeClaim("age", "30", 99);
+    expect(await verifyProof(wrongSalt, proof, tree.root)).toBe(false);
   });
 
-  it("wrong root fails verification", async () => {
+  it("wrong root fails", async () => {
     const a = makeClaim("age", "30");
     const b = makeClaim("name", "Alice");
     const tree = await buildTree([a, b]);
     const proof = generateProof(tree, "age");
-    const wrongRoot = new Uint8Array(32).fill(0xff);
-    const ok = await verifyProof(a, proof, wrongRoot);
-    expect(ok).toBe(false);
+    expect(await verifyProof(a, proof, new Uint8Array(32).fill(0xff))).toBe(false);
   });
 
-  it("reordered proof steps fail verification", async () => {
+  it("reordered proof steps fail", async () => {
     const claims = ["a", "b", "c", "d"].map((k) => makeClaim(k, k));
     const tree = await buildTree(claims);
     const proof = generateProof(tree, "a");
     const reversed: MerkleProof = [...proof].reverse();
-    const ok = await verifyProof(claims[0], reversed, tree.root);
-    expect(ok).toBe(false);
+    expect(await verifyProof(claims[0], reversed, tree.root)).toBe(false);
   });
 
   it("single-leaf tree: empty proof verifies", async () => {
@@ -277,13 +270,26 @@ describe("generateProof + verifyProof", () => {
     const tree = await buildTree([a]);
     const proof = generateProof(tree, "age");
     expect(proof.length).toBe(0);
-    const ok = await verifyProof(a, proof, tree.root);
-    expect(ok).toBe(true);
+    expect(await verifyProof(a, proof, tree.root)).toBe(true);
   });
 
   it("throws on unknown key", async () => {
     const tree = await buildTree([makeClaim("age", "30")]);
     expect(() => generateProof(tree, "missing")).toThrow("not found");
+  });
+
+  it("key containing colon verifies correctly", async () => {
+    const a = makeClaim("a:b", "val");
+    const b = makeClaim("c", "other");
+    const tree = await buildTree([a, b]);
+    expect(await verifyProof(a, generateProof(tree, "a:b"), tree.root)).toBe(true);
+  });
+
+  it("non-ASCII key verifies correctly", async () => {
+    const a = makeClaim("名前", "Alice");
+    const b = makeClaim("age", "30");
+    const tree = await buildTree([a, b]);
+    expect(await verifyProof(a, generateProof(tree, "名前"), tree.root)).toBe(true);
   });
 });
 
@@ -308,124 +314,81 @@ describe("verifyDisclosure", () => {
     return { tree, revealedClaims, salts, proofs, status };
   }
 
-  it("valid disclosure returns valid=true", async () => {
+  it("valid disclosure: proofsValid=true, accepted=true", async () => {
     const claims = [makeClaim("age", "30"), makeClaim("name", "Alice")];
-    const { revealedClaims, salts, proofs, tree } = await makeDisclosure(
-      claims,
-      ["age"],
-    );
-    const result = await verifyDisclosure(
-      revealedClaims,
-      salts,
-      proofs,
-      tree.root,
-      "Valid",
-    );
-    expect(result.valid).toBe(true);
-    expect(result.failedClaims).toEqual([]);
-    expect(result.status).toBe("Valid");
+    const { revealedClaims, salts, proofs, tree } = await makeDisclosure(claims, ["age"]);
+    const r = await verifyDisclosure(revealedClaims, salts, proofs, tree.root, "Valid");
+    expect(r.proofsValid).toBe(true);
+    expect(r.accepted).toBe(true);
+    expect(r.failedClaims).toEqual([]);
+    expect(r.status).toBe("Valid");
   });
 
-  it("expired credential: valid proofs but status=Expired", async () => {
-    const claims = [makeClaim("age", "30")];
+  it("expired credential: proofsValid=true, accepted=false", async () => {
     const { revealedClaims, salts, proofs, tree } = await makeDisclosure(
-      claims,
-      ["age"],
+      [makeClaim("age", "30")], ["age"], "Expired",
     );
-    const result = await verifyDisclosure(
-      revealedClaims,
-      salts,
-      proofs,
-      tree.root,
-      "Expired",
-    );
-    expect(result.valid).toBe(true);
-    expect(result.status).toBe("Expired");
+    const r = await verifyDisclosure(revealedClaims, salts, proofs, tree.root, "Expired");
+    expect(r.proofsValid).toBe(true);
+    expect(r.accepted).toBe(false);
+    expect(r.status).toBe("Expired");
   });
 
-  it("revoked credential: proofs still verified but status=Revoked", async () => {
-    const claims = [makeClaim("age", "30")];
+  it("revoked credential: proofsValid=true, accepted=false", async () => {
     const { revealedClaims, salts, proofs, tree } = await makeDisclosure(
-      claims,
-      ["age"],
+      [makeClaim("age", "30")], ["age"],
     );
-    const result = await verifyDisclosure(
-      revealedClaims,
-      salts,
-      proofs,
-      tree.root,
-      "Revoked",
-    );
-    expect(result.valid).toBe(true);
-    expect(result.status).toBe("Revoked");
+    const r = await verifyDisclosure(revealedClaims, salts, proofs, tree.root, "Revoked");
+    expect(r.proofsValid).toBe(true);
+    expect(r.accepted).toBe(false);
   });
 
-  it("tampered claim: valid=false, failedClaims lists the key", async () => {
+  it("zero claims revealed: accepted=false even if status Valid", async () => {
+    const tree = await buildTree([makeClaim("age", "30")]);
+    const r = await verifyDisclosure({}, {}, {}, tree.root, "Valid");
+    expect(r.proofsValid).toBe(true);
+    expect(r.accepted).toBe(false);
+  });
+
+  it("tampered claim: proofsValid=false, accepted=false, failedClaims lists key", async () => {
     const claims = [makeClaim("age", "30"), makeClaim("name", "Alice")];
     const { salts, proofs, tree } = await makeDisclosure(claims, ["age"]);
-    const result = await verifyDisclosure(
-      { age: "99" }, // tampered
-      salts,
-      proofs,
-      tree.root,
-      "Valid",
-    );
-    expect(result.valid).toBe(false);
-    expect(result.failedClaims).toContain("age");
+    const r = await verifyDisclosure({ age: "99" }, salts, proofs, tree.root, "Valid");
+    expect(r.proofsValid).toBe(false);
+    expect(r.accepted).toBe(false);
+    expect(r.failedClaims).toContain("age");
   });
 
-  it("wrong root: all claims fail", async () => {
-    const claims = [makeClaim("age", "30")];
-    const { revealedClaims, salts, proofs } = await makeDisclosure(claims, [
-      "age",
-    ]);
-    const wrongRoot = new Uint8Array(32).fill(0xab);
-    const result = await verifyDisclosure(
-      revealedClaims,
-      salts,
-      proofs,
-      wrongRoot,
-      "Valid",
+  it("wrong root: proofsValid=false", async () => {
+    const { revealedClaims, salts, proofs } = await makeDisclosure(
+      [makeClaim("age", "30")], ["age"],
     );
-    expect(result.valid).toBe(false);
-    expect(result.failedClaims).toContain("age");
+    const r = await verifyDisclosure(
+      revealedClaims, salts, proofs, new Uint8Array(32).fill(0xab), "Valid",
+    );
+    expect(r.proofsValid).toBe(false);
+    expect(r.accepted).toBe(false);
   });
 
   it("missing salt: claim fails", async () => {
-    const claims = [makeClaim("age", "30")];
-    const { revealedClaims, proofs, tree } = await makeDisclosure(claims, [
-      "age",
-    ]);
-    const result = await verifyDisclosure(
-      revealedClaims,
-      {}, // no salts
-      proofs,
-      tree.root,
-      "Valid",
+    const { revealedClaims, proofs, tree } = await makeDisclosure(
+      [makeClaim("age", "30")], ["age"],
     );
-    expect(result.valid).toBe(false);
-    expect(result.failedClaims).toContain("age");
+    const r = await verifyDisclosure(revealedClaims, {}, proofs, tree.root, "Valid");
+    expect(r.proofsValid).toBe(false);
+    expect(r.failedClaims).toContain("age");
   });
 
-  it("multiple claims: partial reveal, all valid", async () => {
+  it("multiple claims: partial reveal, all valid → accepted=true", async () => {
     const claims = [
-      makeClaim("age", "30"),
-      makeClaim("name", "Alice"),
-      makeClaim("country", "NG"),
+      makeClaim("age", "30"), makeClaim("country", "NG"), makeClaim("name", "Alice"),
     ];
     const { revealedClaims, salts, proofs, tree } = await makeDisclosure(
-      claims,
-      ["age", "country"],
+      claims, ["age", "country"],
     );
-    const result = await verifyDisclosure(
-      revealedClaims,
-      salts,
-      proofs,
-      tree.root,
-      "Valid",
-    );
-    expect(result.valid).toBe(true);
-    expect(result.failedClaims).toEqual([]);
+    const r = await verifyDisclosure(revealedClaims, salts, proofs, tree.root, "Valid");
+    expect(r.proofsValid).toBe(true);
+    expect(r.accepted).toBe(true);
   });
 });
 

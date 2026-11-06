@@ -24,7 +24,7 @@ flowchart TD
     M -->|"2. Merkle root → claims_root"| CR
     Holder -->|"3. hold claims + salts\n(off-chain)"| M
     Holder -->|"4. reveal chosen claims\n+ proofs to verifier"| VD
-    VD -->|"5. fetch root + status"| CR
+    VD -->|"5. caller supplies root + status\n(fetched from chain separately)"| VD
     VD -->|"6. DisclosureResult"| Verifier
 
     Admin -->|"stellar keys generate"| C
@@ -43,8 +43,9 @@ flowchart TD
 ### Verifying a selective disclosure
 
 1. Holder selects which claims to reveal and passes their values, salts, and Merkle proofs to the verifier.
-2. Verifier calls `verifyDisclosure()` from the SDK with the revealed data plus the on-chain root (fetched from the contract) and the credential status.
-3. The SDK verifies each proof off-chain and returns a `DisclosureResult`.
+2. The verifier independently fetches the on-chain root (`get_credential()`) and status (`status()`) from the credential-registry.
+3. The verifier calls `verifyDisclosure()` from the SDK with the revealed data, the fetched root, and the fetched status.
+4. The SDK verifies each proof off-chain and returns a `DisclosureResult` with `proofsValid`, `accepted`, and `status`. The SDK does not read from the chain.
 
 ## Component responsibilities
 
@@ -52,8 +53,8 @@ flowchart TD
 |---|---|
 | `identity-registry` | Wallet-linked identity records (metadata hash only). Admin, pause, two-step admin transfer. |
 | `credential-registry` | Issuer allowlist, schema registry, credential issuance (root + expiry), revocation, status queries, paged listing. |
-| `@identra/sdk` | Merkle tree construction, proof generation, proof verification, `verifyDisclosure`. |
-| `@identra/cli` | Human-friendly wrappers around `stellar contract invoke` calls. Uses named Stellar identities. No secret key handling. |
+| `@identra/sdk` | Merkle tree construction, proof generation, proof verification, `verifyDisclosure`. Verifies proofs against a root and status supplied by the caller. Does not read from the chain. |
+| `@identra/cli` | Prints `stellar contract invoke` commands for each registry operation. Does not execute them. Uses named Stellar identities. No secret key handling. |
 
 ## Storage layout
 

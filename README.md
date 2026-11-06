@@ -15,11 +15,11 @@ selectively disclosed claims.
    a Merkle root plus an expiry. Credentials can be revoked and their status
    queried.
 3. **SDK (`@identra/sdk`):** build salted Merkle trees off-chain, let a holder
-   reveal chosen claims with proofs, and verify those proofs against the
-   on-chain root and the credential's status.
-4. **CLI (`@identra/cli`):** human-friendly wrappers around `stellar contract
-   invoke` for each registry operation. Uses named Stellar identities; never
-   handles secret keys.
+   reveal chosen claims with proofs, and verify those proofs against a root and
+   status that the caller supplies (fetched independently from the chain).
+4. **CLI (`@identra/cli`):** prints `stellar contract invoke` commands for each
+   registry operation. Does not execute them. Uses named Stellar identities;
+   never handles secret keys.
 
 Claim data and salts never touch the ledger.
 
@@ -39,10 +39,8 @@ other tools do and how Identra differs.
 ## Getting started (testnet quickstart)
 
 > **Pre-requisites:** Rust 1.93.0 via rustup, Node.js 26.13.0, stellar-cli 30.0.1.
-> Run the commands below in a terminal in the project root.
-> This quickstart has not yet been run end-to-end on testnet — stellar-cli was
-> not available during development. All steps are correct per the official Stellar
-> documentation. When you run it for the first time, report any issue.
+> This quickstart has not been run end-to-end on testnet or on Windows.
+> All steps follow the official Stellar documentation. Report any issue.
 
 ### 1. Install tools
 

@@ -80,11 +80,12 @@ as a GitHub org or crate as of November 2026.
 ## Merkle tree format (Spec 4)
 
 - **Hash function:** SHA-256 via `crypto.subtle.digest` (Web Crypto API, Node.js 20+ built-in). No external hash library.
-- **Salt size:** 32 bytes (256 bits). Matches SHA-256 output length.
-- **Leaf encoding:** `SHA-256(0x00 || salt(32) || key_utf8 || ':' || value_utf8)` — domain-separated with prefix byte `0x00`.
-- **Node encoding:** `SHA-256(0x01 || left(32) || right(32))` — domain-separated with prefix byte `0x01`.
+- **Salt size:** 32 bytes.
+- **Leaf encoding:** `SHA-256(0x00 || salt(32) || len4(key) || key_utf8 || len4(value) || value_utf8)` — 4-byte big-endian length prefix before each field eliminates ambiguity from keys/values containing colons or multi-byte characters.
+- **Node encoding:** `SHA-256(0x01 || left(32) || right(32))`.
 - **Odd leaf count:** duplicate the last leaf.
-- **Leaf ordering:** sorted by claim key (UTF-8 lexicographic) before construction.
+- **Leaf ordering:** sorted by UTF-8 byte representation of key (lexicographic on encoded bytes).
+- **Duplicate keys:** rejected with an error.
 - See `docs/MERKLE_SPEC.md` for full spec and test vectors.
 
 ---
@@ -94,6 +95,9 @@ as a GitHub org or crate as of November 2026.
 **Decision:** admin or any approved issuer may register schemas.
 **Rationale:** schemas are public blueprints describing claim structure; they contain no sensitive data. Restricting to admin-only would require an extra round-trip for every issuer onboarding. Any approved issuer is already trusted to issue credentials, so trusting them to register schemas is consistent.
 
-## Cross-contract identity check (Spec 3)
+## Cross-contract identity check (removed)
 
-`set_identity_registry` stores the identity-registry contract address. When set, `issue` verifies the subject has an active identity. Implementation requires the identity-registry wasm to be present at compile time (built via `stellar contract build --package identity-registry`). Deferred until stellar-cli is installed and both contracts are compiled to wasm. The `set_identity_registry` function and storage key are fully wired; only the cross-contract call body is pending.
+`set_identity_registry` and the `IdentityRegistry` storage key have been
+removed from `credential-registry`. The function added complexity without a
+testable implementation path (stellar-cli was unavailable to build the wasm).
+If cross-contract subject verification is needed, it is a roadmap item.

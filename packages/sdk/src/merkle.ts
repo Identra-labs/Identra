@@ -3,10 +3,12 @@
  *
  * Design:
  *  - Hash function: SHA-256 via Web Crypto (crypto.subtle)
- *  - Leaf:  SHA-256( 0x00 || salt(32) || key_utf8 || ':' || value_utf8 )
+ *  - Leaf:  SHA-256( 0x00 || salt(32) || len4(key) || key_utf8 || len4(value) || value_utf8 )
+ *           where len4 is a 4-byte big-endian uint32 byte-length prefix
  *  - Node:  SHA-256( 0x01 || left(32) || right(32) )
+ *  - Leaves sorted by key UTF-8 bytes (lexicographic on the encoded bytes)
  *  - Odd leaf count: duplicate the last leaf
- *  - Leaves sorted by key (UTF-8 lexicographic) before construction
+ *  - Duplicate keys are rejected
  *
  * See docs/MERKLE_SPEC.md for the full specification and test vectors.
  */
@@ -16,6 +18,16 @@ import type { MerkleProof, MerkleTree, SaltedClaim } from "./types.js";
 const LEAF_PREFIX = new Uint8Array([0x00]);
 const NODE_PREFIX = new Uint8Array([0x01]);
 const enc = new TextEncoder();
+
+/** Write a uint32 as 4 big-endian bytes. */
+function len4(n: number): Uint8Array {
+  const b = new Uint8Array(4);
+  b[0] = (n >>> 24) & 0xff;
+  b[1] = (n >>> 16) & 0xff;
+  b[2] = (n >>> 8) & 0xff;
+  b[3] = n & 0xff;
+  return b;
+}
 
 /** Compute SHA-256 of the concatenation of all provided byte arrays. */
 export async function sha256(...parts: Uint8Array[]): Promise<Uint8Array> {
@@ -32,18 +44,21 @@ export async function sha256(...parts: Uint8Array[]): Promise<Uint8Array> {
 
 /**
  * Hash a single claim leaf.
- * leaf_hash = SHA-256( 0x00 || salt(32) || key_utf8 || ':' || value_utf8 )
+ * leaf_hash = SHA-256( 0x00 || salt(32) || len4(key) || key_utf8 || len4(value) || value_utf8 )
  */
 export async function hashLeaf(claim: SaltedClaim): Promise<Uint8Array> {
   if (claim.salt.length !== 32) {
     throw new Error(`salt must be 32 bytes, got ${claim.salt.length}`);
   }
+  const keyBytes = enc.encode(claim.key);
+  const valBytes = enc.encode(claim.value);
   return sha256(
     LEAF_PREFIX,
     claim.salt,
-    enc.encode(claim.key),
-    enc.encode(":"),
-    enc.encode(claim.value),
+    len4(keyBytes.length),
+    keyBytes,
+    len4(valBytes.length),
+    valBytes,
   );
 }
 
@@ -58,9 +73,19 @@ export async function hashNode(
   return sha256(NODE_PREFIX, left, right);
 }
 
+/** Compare two Uint8Arrays lexicographically by byte value. */
+function compareBytes(a: Uint8Array, b: Uint8Array): number {
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return a.length - b.length;
+}
+
 /**
  * Build a Merkle tree from a set of salted claims.
- * Claims are sorted by key before construction.
+ * Keys are sorted by their UTF-8 byte representation (lexicographic on bytes).
+ * Duplicate keys are rejected.
  * Odd number of leaves: the last leaf is duplicated.
  */
 export async function buildTree(claims: SaltedClaim[]): Promise<MerkleTree> {
@@ -68,10 +93,17 @@ export async function buildTree(claims: SaltedClaim[]): Promise<MerkleTree> {
     throw new Error("cannot build a Merkle tree with zero claims");
   }
 
-  // Sort by key for deterministic ordering
+  // Sort by UTF-8 bytes of key
   const sorted = [...claims].sort((a, b) =>
-    a.key < b.key ? -1 : a.key > b.key ? 1 : 0,
+    compareBytes(enc.encode(a.key), enc.encode(b.key)),
   );
+
+  // Reject duplicate keys
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].key === sorted[i - 1].key) {
+      throw new Error(`duplicate claim key: "${sorted[i].key}"`);
+    }
+  }
 
   // Compute leaf hashes
   const leafHashes = await Promise.all(sorted.map(hashLeaf));
@@ -81,7 +113,6 @@ export async function buildTree(claims: SaltedClaim[]): Promise<MerkleTree> {
   let current = leafHashes;
 
   while (current.length > 1) {
-    // Duplicate last leaf if odd count
     const padded =
       current.length % 2 === 1
         ? [...current, current[current.length - 1]]
@@ -116,7 +147,6 @@ export function generateProof(tree: MerkleTree, key: string): MerkleProof {
 
   for (let level = 0; level < tree.levels.length - 1; level++) {
     const levelNodes = tree.levels[level];
-    // Pad to even if necessary
     const padded =
       levelNodes.length % 2 === 1
         ? [...levelNodes, levelNodes[levelNodes.length - 1]]
@@ -127,7 +157,7 @@ export function generateProof(tree: MerkleTree, key: string): MerkleProof {
 
     proof.push({
       sibling: padded[siblingIndex],
-      isLeft: isRightChild, // sibling is left when current is right
+      isLeft: isRightChild,
     });
 
     index = Math.floor(index / 2);

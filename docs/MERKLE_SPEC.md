@@ -4,19 +4,27 @@
 
 | Item | Choice | Reason |
 |---|---|---|
-| Hash function | SHA-256 (via Web Crypto `crypto.subtle.digest`) | Standard, available in all Node.js 20+ and browser environments without extra dependencies |
-| Salt size | 32 bytes (256 bits) | Matches the hash output size; provides sufficient pre-image resistance |
-| Leaf encoding | `SHA-256( salt ‖ key_utf8 ‖ ":" ‖ value_utf8 )` where `‖` is byte concatenation | Canonical; key and value are length-prefixed by the colon separator pattern |
-| Leaf prefix byte | `0x00` prepended before hashing a leaf pair | Domain separation between leaf and node hashes (standard binary Merkle tree practice) |
-| Node prefix byte | `0x01` prepended before hashing two children | Domain separation |
-| Odd leaf count | Duplicate the last leaf | Deterministic; never changes the root based on padding strategy |
-| Leaf ordering | Sorted by claim key (UTF-8 lexicographic) before tree construction | Deterministic tree regardless of insertion order; required for reproducible roots |
+| Hash function | SHA-256 via `crypto.subtle.digest` | Standard; built into Node.js 20+ and browsers |
+| Salt size | 32 bytes | Matches hash output size |
+| Leaf encoding | `SHA-256( 0x00 \|\| salt(32) \|\| len4(key) \|\| key_utf8 \|\| len4(value) \|\| value_utf8 )` | Length-prefix eliminates ambiguity between keys and values that contain colons or multi-byte characters |
+| Leaf prefix | `0x00` | Domain separation from node hashes |
+| Node prefix | `0x01` | Domain separation from leaf hashes |
+| Odd leaf count | Duplicate the last leaf | Deterministic; no padding changes the root strategy |
+| Leaf ordering | Sorted by UTF-8 byte representation of key (lexicographic on encoded bytes) | Deterministic regardless of insertion order; handles non-ASCII correctly |
+| Duplicate keys | Rejected with an error | Prevents ambiguous trees |
 | Root encoding | 32-byte `Uint8Array`, hex string for display | Matches `BytesN<32>` on-chain |
 
 ## Canonical leaf hash
 
 ```
-leaf_hash = SHA-256( 0x00 || salt_bytes(32) || key_bytes || ':' || value_bytes )
+len4(x)   = 4-byte big-endian uint32 encoding of the byte length of x
+
+leaf_hash = SHA-256(
+  0x00
+  || salt_bytes(32)
+  || len4(key_utf8)  || key_utf8
+  || len4(value_utf8) || value_utf8
+)
 ```
 
 ## Canonical node hash
@@ -27,57 +35,66 @@ node_hash = SHA-256( 0x01 || left_child_hash(32) || right_child_hash(32) )
 
 ## Test vectors
 
-These vectors are computed by the SDK's own implementation and must match on every run.
+Exact hex values are asserted via snapshot in `packages/sdk/src/index.test.ts`
+(the "known vector: zero salt, age=30" test). Any change to the leaf encoding
+will cause that snapshot to fail, making encoding drift visible immediately.
 
-### Single claim
+### Single claim (conceptual)
 
-Input: `{ age: "30" }`, salt: `0x00...00` (32 zero bytes)
-
-```
-leaf  = SHA-256( 0x00 || 00..00(32) || "age" || ":" || "30" )
-root  = leaf   (single-node tree — no node hash needed)
-```
-
-### Two claims
-
-Input: `{ age: "30", name: "Alice" }` (sorted: age, name), both salts `0x00..00`
+Input: `{ age: "30" }`, salt: 32 zero bytes
 
 ```
-leaf_age  = SHA-256( 0x00 || 00..00(32) || "age"  || ":" || "30"    )
-leaf_name = SHA-256( 0x00 || 00..00(32) || "name" || ":" || "Alice" )
+key_bytes   = UTF-8("age")   = [61 67 65]        (3 bytes)
+value_bytes = UTF-8("30")    = [33 30]            (2 bytes)
+leaf_input  = [00]                                 (leaf prefix)
+              [00 00 ... 00]                       (32-byte zero salt)
+              [00 00 00 03] [61 67 65]             (len4(3) + "age")
+              [00 00 00 02] [33 30]                (len4(2) + "30")
+root = SHA-256(leaf_input)
+```
+
+### Two claims (conceptual)
+
+Input: `{ age: "30", name: "Alice" }`, both salts 32 zero bytes.
+Sorted order: `age` < `name` (UTF-8 bytes).
+
+```
+leaf_age  = SHA-256( 0x00 || 00..00(32) || len4(3) || "age"   || len4(2) || "30" )
+leaf_name = SHA-256( 0x00 || 00..00(32) || len4(4) || "name"  || len4(5) || "Alice" )
 root      = SHA-256( 0x01 || leaf_age || leaf_name )
 ```
 
-Exact hex values computed and asserted in `packages/sdk/src/merkle.test.ts`.
-
 ## Proof format
 
-A proof for a leaf is the ordered list of sibling hashes from leaf to root, with a direction bit:
+A proof for a leaf is the ordered list of sibling hashes from leaf to root, each with a direction bit:
 
 ```typescript
 type ProofStep = { sibling: Uint8Array; isLeft: boolean };
 type MerkleProof = ProofStep[];
 ```
 
-`isLeft: true` means the sibling is on the LEFT (the current node is on the right).
+`isLeft: true` means the sibling is on the LEFT (the current node is the right child).
 
 ## verifyDisclosure inputs / outputs
 
+The caller must supply the on-chain root and status. The SDK does not read from
+the Stellar network.
+
 ```typescript
 verifyDisclosure(
-  credentialId: bigint,
   revealedClaims: Record<string, string>,
-  salts: Record<string, Uint8Array>,      // one salt per revealed claim
-  proofs: Record<string, MerkleProof>,    // one proof per revealed claim
-  onChainRoot: Uint8Array,                // 32-byte root from the contract
-  status: CredentialStatus,               // from contract status()
-) => DisclosureResult
+  salts:          Record<string, Uint8Array>,
+  proofs:         Record<string, MerkleProof>,
+  onChainRoot:    Uint8Array,       // 32-byte root — caller fetches from contract
+  status:         CredentialStatus, // caller fetches from contract
+) => Promise<DisclosureResult>
 ```
 
 ```typescript
 type DisclosureResult = {
-  valid: boolean;
-  status: CredentialStatus;
-  failedClaims: string[];   // claim keys whose proofs did not verify
+  proofsValid:  boolean;           // all proofs verified against the root
+  accepted:     boolean;           // proofsValid && keys.length > 0 && status === "Valid"
+  status:       CredentialStatus;
+  failedClaims: string[];
 };
 ```

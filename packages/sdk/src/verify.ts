@@ -1,5 +1,9 @@
 /**
- * verifyDisclosure — check a selective disclosure against the on-chain root.
+ * verifyDisclosure — verify a selective disclosure against a supplied root and status.
+ *
+ * The caller is responsible for fetching the on-chain root (from
+ * credential-registry get_credential()) and status (from status()) before
+ * calling this function. The SDK does not read from the chain.
  */
 
 import { verifyProof } from "./merkle.js";
@@ -10,14 +14,13 @@ import type {
 } from "./types.js";
 
 /**
- * Verify that each revealed claim's proof is valid against the on-chain root,
- * and report the credential's status.
+ * Verify that each revealed claim's proof is valid against the supplied root.
  *
  * @param revealedClaims  - key/value pairs the holder chose to reveal
  * @param salts           - the 32-byte salt for each revealed claim key
  * @param proofs          - the Merkle proof for each revealed claim key
- * @param onChainRoot     - 32-byte root stored on-chain by the issuer
- * @param status          - current credential status from contract status()
+ * @param onChainRoot     - 32-byte root supplied by the caller (from the contract)
+ * @param status          - credential status supplied by the caller (from the contract)
  */
 export async function verifyDisclosure(
   revealedClaims: Record<string, string>,
@@ -27,8 +30,9 @@ export async function verifyDisclosure(
   status: CredentialStatus,
 ): Promise<DisclosureResult> {
   const failedClaims: string[] = [];
+  const keys = Object.keys(revealedClaims);
 
-  for (const key of Object.keys(revealedClaims)) {
+  for (const key of keys) {
     const value = revealedClaims[key];
     const salt = salts[key];
     const proof = proofs[key];
@@ -44,8 +48,12 @@ export async function verifyDisclosure(
     }
   }
 
+  const proofsValid = failedClaims.length === 0;
+  const accepted = proofsValid && keys.length > 0 && status === "Valid";
+
   return {
-    valid: failedClaims.length === 0,
+    proofsValid,
+    accepted,
     status,
     failedClaims,
   };

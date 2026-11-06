@@ -39,10 +39,15 @@ export type MerkleProof = ProofStep[];
 /** Result from verifyDisclosure(). */
 export interface DisclosureResult {
   /** True if all provided proofs verified against the on-chain root. */
-  valid: boolean;
-  /** The credential status (from the contract). */
+  proofsValid: boolean;
+  /**
+   * True only when proofsValid is true, at least one claim was revealed,
+   * and status is "Valid".
+   */
+  accepted: boolean;
+  /** The credential status (from the contract or supplied by the caller). */
   status: CredentialStatus;
-  /** Claim keys whose proofs failed verification. Empty when valid. */
+  /** Claim keys whose proofs failed verification. Empty when proofsValid. */
   failedClaims: string[];
 }
 

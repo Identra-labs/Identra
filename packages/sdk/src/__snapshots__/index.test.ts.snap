@@ -1,3 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`hashLeaf > known vector: zero salt, age=30 (snapshot) 1`] = `"9881acb014f20fa14eb60afcfd653fe1a0a0db930c5f708ddc86ef59c3730348"`;
+
 exports[`hashLeaf > known vector: zero salt, age=30 1`] = `"c039a0437978df9736659a2ee30b53e87064710bd3c3ba9a61cf14eaaabb5380"`;
