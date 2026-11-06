@@ -83,7 +83,11 @@ Decided and recorded in Spec 4 with test vectors in `docs/MERKLE_SPEC.md`.
 
 ---
 
-## Credential registry: who may register schemas (Spec 3 — pending)
+## Credential registry: who may register schemas (Spec 3)
 
-Candidates: (a) admin only, (b) any approved issuer, (c) admin or any approved
-issuer. Decided and documented in Spec 3.
+**Decision:** admin or any approved issuer may register schemas.
+**Rationale:** schemas are public blueprints describing claim structure; they contain no sensitive data. Restricting to admin-only would require an extra round-trip for every issuer onboarding. Any approved issuer is already trusted to issue credentials, so trusting them to register schemas is consistent.
+
+## Cross-contract identity check (Spec 3)
+
+`set_identity_registry` stores the identity-registry contract address. When set, `issue` verifies the subject has an active identity. Implementation requires the identity-registry wasm to be present at compile time (built via `stellar contract build --package identity-registry`). Deferred until stellar-cli is installed and both contracts are compiled to wasm. The `set_identity_registry` function and storage key are fully wired; only the cross-contract call body is pending.
